@@ -1,0 +1,9 @@
+[package]
+name = "vulkan-experiments"
+version = "0.1.0"
+authors = ["Andreas Monitzer <andreas@monitzer.com>"]
+edition = "2018"
+
+[dependencies]
+ash = "0.29"
+winit = "0.20.0-alpha3"
