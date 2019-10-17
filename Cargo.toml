@@ -9,3 +9,6 @@ log = "0.4"
 log4rs = "0.8"
 ash = "0.29"
 winit = "0.20.0-alpha3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { version = "0.3", features = ["libloaderapi"] }

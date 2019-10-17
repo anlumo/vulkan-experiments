@@ -26,7 +26,13 @@ use ash::{
         },
     },
 };
-use std::ffi::{CString, CStr};
+#[cfg(target_os = "windows")]
+use winapi::um::libloaderapi::GetModuleHandleA;
+use std::{
+    ffi::{CString, CStr},
+    ptr::null,
+    collections::HashSet,
+};
 
 mod queue_families;
 use crate::queue_families::QueueFamilyIndices;
@@ -100,14 +106,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .push_next(&mut debug_messenger_info);
 
     let instance = unsafe { entry.create_instance(&create_info, None)? };
+
+    // *** DEBUG LOGGING ***
     let debug_utils = DebugUtils::new(&entry, &instance);
     let debug_utils_messenger = unsafe { debug_utils.create_debug_utils_messenger(&debug_messenger_info, None)? };
 
+    // *** WINDOW CREATION ***
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        .with_title("Vulkan Experiment")
+        .build(&event_loop).unwrap();
+
+    // *** SURFACE CREATION ***
+    let surface_create_info = vk::Win32SurfaceCreateInfoKHR::builder()
+        .hinstance(unsafe { GetModuleHandleA(null()) } as *const std::ffi::c_void)
+        .hwnd(window.hwnd());
+
+    let surface_ext = Surface::new(&entry, &instance);
+    let win32_surface_ext = Win32Surface::new(&entry, &instance);
+    let surface = unsafe { win32_surface_ext.create_win32_surface(&surface_create_info, None) }?;
+
+    // *** PHYSICAL DEVICE SELECTION ***
     let physical_devices = unsafe { instance.enumerate_physical_devices() }?;
     let physical_device = physical_devices.into_iter().filter_map(|device| {
         let (suitability, name) = is_device_suitable(&instance, device);
         if suitability > 0 {
-            let indices = QueueFamilyIndices::find(&instance, device);
+            let indices = QueueFamilyIndices::find(&instance, device, &surface_ext, &surface);
             if indices.is_device_suitable() {
                 return Some((suitability, device, name, indices));
             }
@@ -121,27 +145,32 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let physical_device = physical_device.unwrap();
     info!("Device selected: {}", physical_device.2);
 
-    let graphics_queue_create_info = vk::DeviceQueueCreateInfo::builder()
-        .queue_family_index(physical_device.3.graphics.unwrap())
-        .queue_priorities(&[1.0]);
-    let queue_create_info = [*graphics_queue_create_info];
+    // *** DEVICE CREATION ***
     let physical_device_features = vk::PhysicalDeviceFeatures::builder();
     
+    let queue_families: HashSet<u32> = [
+        physical_device.3.graphics.unwrap(),
+        physical_device.3.present.unwrap(),
+    ].into_iter().cloned().collect();
+    let queue_create_infos: Vec<vk::DeviceQueueCreateInfo> = queue_families.into_iter().map(|queue_family| {
+        vk::DeviceQueueCreateInfo::builder()
+            .queue_family_index(queue_family)
+            .queue_priorities(&[1.0])
+            .build()
+    }).collect();
     let device_create_info = vk::DeviceCreateInfo::builder()
-        .queue_create_infos(&queue_create_info)
+        .queue_create_infos(&queue_create_infos)
         .enabled_features(&physical_device_features)
         .enabled_layer_names(&layers_names_raw);
     
     let device = unsafe { instance.create_device(physical_device.1, &device_create_info, None) }?;
 
+    // *** QUEUE CREATION ***
     let graphics_queue = unsafe { device.get_device_queue(physical_device.3.graphics.unwrap(), 0) };
+    let present_queue = unsafe { device.get_device_queue(physical_device.3.present.unwrap(), 0) };
 
-    let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title("Vulkan Experiment")
-        .build(&event_loop).unwrap();
-    // let hwnd = window.hwnd();
 
+    // *** MAIN LOOP ***
     event_loop.run(move |event, _, control_flow| {
         match event {
             Event::EventsCleared => {
@@ -177,6 +206,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 *control_flow = ControlFlow::Exit;
                 unsafe {
                     device.device_wait_idle().unwrap();
+                    surface_ext.destroy_surface(surface, None);
                     device.destroy_device(None);
                     debug_utils.destroy_debug_utils_messenger(debug_utils_messenger, None);
                     instance.destroy_instance(None);
