@@ -5,5 +5,7 @@ authors = ["Andreas Monitzer <andreas@monitzer.com>"]
 edition = "2018"
 
 [dependencies]
+log = "0.4"
+log4rs = "0.8"
 ash = "0.29"
 winit = "0.20.0-alpha3"
