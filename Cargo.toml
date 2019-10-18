@@ -10,6 +10,7 @@ log4rs = "0.8"
 ash = "0.29"
 winit = "0.20.0-alpha3"
 lazy_static = "1.4"
+shaderc = "0.6"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3", features = ["libloaderapi"] }
