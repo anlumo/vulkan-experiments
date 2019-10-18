@@ -306,7 +306,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.create_swapchain(&window)?;
     app.create_queues()?;
 
-    let app = Some(app);
+    let mut app = Some(app);
 
     // *** MAIN LOOP ***
     event_loop.run(move |event, _, control_flow| {
@@ -342,7 +342,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             } if window_id == window.id() => {
                 info!("Close requested");
                 *control_flow = ControlFlow::Exit;
-                drop(app.as_ref());
+                app.take();
             }
             _ => *control_flow = ControlFlow::Poll,
         }
