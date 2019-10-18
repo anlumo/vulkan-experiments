@@ -324,35 +324,41 @@ impl VulkanExperiment {
         let vertex_shader   = self.create_shader_module(include_str!("shaders/triangle.vs"), "triangle.vs", shaderc::ShaderKind::Vertex)?;
         let fragment_shader = self.create_shader_module(include_str!("shaders/triangle.fs"), "triangle.fs", shaderc::ShaderKind::Fragment)?;
 
-        let vertex_shader_stage_info = vk::PipelineShaderStageCreateInfo::builder()
-            .stage(vk::ShaderStageFlags::VERTEX)
-            .module(vertex_shader)
-            .name(CStr::from_bytes_with_nul(b"main\0").unwrap());
+        let main = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
+
+        let shader_stages = [
+            vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::VERTEX)
+                .module(vertex_shader)
+                .name(main)
+                .build(),
+            vk::PipelineShaderStageCreateInfo::builder()
+                .stage(vk::ShaderStageFlags::FRAGMENT)
+                .module(fragment_shader)
+                .name(main)
+                .build(),
+        ];
         
-        let fragment_shader_stage_info = vk::PipelineShaderStageCreateInfo::builder()
-            .stage(vk::ShaderStageFlags::FRAGMENT)
-            .module(fragment_shader)
-            .name(CStr::from_bytes_with_nul(b"main\0").unwrap());
-        
-        let shader_stages = [*vertex_shader_stage_info, *fragment_shader_stage_info];
         let vertex_input_info = vk::PipelineVertexInputStateCreateInfo::builder()
             .vertex_binding_descriptions(&[])
             .vertex_attribute_descriptions(&[]);
         let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
-        let viewport = *vk::Viewport::builder()
+        let viewports = [vk::Viewport::builder()
             .x(0.0)
             .y(0.0)
             .width(extent.width as f32)
             .height(extent.height as f32)
             .min_depth(0.0)
-            .max_depth(1.0);
-        let viewports = [viewport];
-        let scissor = *vk::Rect2D::builder()
+            .max_depth(1.0)
+            .build()
+        ];
+        let scissors = [vk::Rect2D::builder()
             .offset(*vk::Offset2D::builder().x(0).y(0))
-            .extent(extent);
-        let scissors = [scissor];
+            .extent(extent)
+            .build()
+        ];
         
         let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
             .viewport_count(1)
@@ -377,7 +383,7 @@ impl VulkanExperiment {
             .alpha_to_coverage_enable(false)
             .alpha_to_one_enable(false);
         
-        let color_blend_attachment = *vk::PipelineColorBlendAttachmentState::builder()
+        let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::builder()
             .color_write_mask(vk::ColorComponentFlags::R | vk::ColorComponentFlags::G | vk::ColorComponentFlags::B | vk::ColorComponentFlags::A)
             .blend_enable(false)
             .src_color_blend_factor(vk::BlendFactor::ONE)
@@ -385,8 +391,9 @@ impl VulkanExperiment {
             .color_blend_op(vk::BlendOp::ADD)
             .src_alpha_blend_factor(vk::BlendFactor::ONE)
             .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-            .alpha_blend_op(vk::BlendOp::ADD);
-        let color_blend_attachments = [color_blend_attachment];
+            .alpha_blend_op(vk::BlendOp::ADD)
+            .build()
+        ];
 
         let color_blending = vk::PipelineColorBlendStateCreateInfo::builder()
             .logic_op_enable(false)
@@ -402,7 +409,7 @@ impl VulkanExperiment {
 
         self.pipeline_layout = unsafe { self.device.as_ref().unwrap().create_pipeline_layout(&pipeline_layout_info, None) }?;
 
-        let pipeline_info = *vk::GraphicsPipelineCreateInfo::builder()
+        let pipeline_infos = [vk::GraphicsPipelineCreateInfo::builder()
             .stages(&shader_stages)
             .vertex_input_state(&vertex_input_info)
             .input_assembly_state(&input_assembly)
@@ -413,8 +420,9 @@ impl VulkanExperiment {
             .layout(self.pipeline_layout)
             .render_pass(self.render_pass)
             .subpass(0)
-            .base_pipeline_index(-1);
-        let pipeline_infos = [pipeline_info];
+            .base_pipeline_index(-1)
+            .build()
+        ];
 
         trace!("Creating graphics pipeline");
 
@@ -431,7 +439,7 @@ impl VulkanExperiment {
 
     pub fn create_render_pass(&mut self) -> VulkanResult<()> {
         trace!("create_render_pass");
-        let color_attachment = *vk::AttachmentDescription::builder()
+        let color_attachments = [vk::AttachmentDescription::builder()
             .format(self.physical_device.swap_chain_support_details.choose_format().format)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
@@ -439,17 +447,21 @@ impl VulkanExperiment {
             .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
             .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
             .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR);
-        let color_attachments = [color_attachment];
+            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)
+            .build()
+        ];
         
-        let color_attachment_ref = *vk::AttachmentReference::builder()
+        let color_attachment_refs = [vk::AttachmentReference::builder()
             .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL);
+            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)
+            .build()
+        ];
         
-        let subpass = *vk::SubpassDescription::builder()
+        let subpasses = [vk::SubpassDescription::builder()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&[color_attachment_ref]);
-        let subpasses = [subpass];
+            .color_attachments(&color_attachment_refs)
+            .build()
+        ];
         
         let render_pass_info = vk::RenderPassCreateInfo::builder()
             .attachments(&color_attachments)
