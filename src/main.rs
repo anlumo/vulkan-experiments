@@ -84,6 +84,7 @@ struct VulkanExperiment {
     device: Option<ash::Device>,
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<vk::Image>,
+    swapchain_image_views: Vec<vk::ImageView>,
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
 
@@ -106,6 +107,7 @@ impl VulkanExperiment {
             device: Default::default(),
             swapchain: Default::default(),
             swapchain_images: Default::default(),
+            swapchain_image_views: Default::default(),
             graphics_queue: Default::default(),
             present_queue: Default::default(),
 
@@ -266,6 +268,27 @@ impl VulkanExperiment {
         Ok(())
     }
 
+    pub fn create_image_views(&mut self) -> VulkanResult<()> {
+        let surface_format = self.physical_device.swap_chain_support_details.choose_format();
+        self.swapchain_image_views = self.swapchain_images.iter().map(|image| {
+            let create_info = vk::ImageViewCreateInfo::builder()
+                .image(*image)
+                .view_type(vk::ImageViewType::TYPE_2D)
+                .format(surface_format.format)
+                .components(*vk::ComponentMapping::builder().r(vk::ComponentSwizzle::IDENTITY).g(vk::ComponentSwizzle::IDENTITY).b(vk::ComponentSwizzle::IDENTITY).a(vk::ComponentSwizzle::IDENTITY))
+                .subresource_range(*vk::ImageSubresourceRange::builder()
+                    .aspect_mask(vk::ImageAspectFlags::COLOR)
+                    .base_mip_level(0)
+                    .level_count(1)
+                    .base_array_layer(0)
+                    .layer_count(1)
+                );
+            unsafe { self.device.as_ref().unwrap().create_image_view(&create_info, None) }
+        }).collect::<Result<Vec<vk::ImageView>, ash::vk::Result>>()?;
+
+        Ok(())
+    }
+
     pub fn create_queues(&mut self) -> VulkanResult<()> {
         self.graphics_queue = unsafe { self.device.as_ref().unwrap().get_device_queue(self.physical_device.indices.graphics.unwrap(), 0) };
         self.present_queue = unsafe { self.device.as_ref().unwrap().get_device_queue(self.physical_device.indices.present.unwrap(), 0) };
@@ -276,10 +299,14 @@ impl VulkanExperiment {
 impl Drop for VulkanExperiment {
     fn drop(&mut self) {
         unsafe {
-            self.device.as_ref().unwrap().device_wait_idle().unwrap();
+            let device = self.device.as_ref().unwrap();
+            device.device_wait_idle().unwrap();
+            for image_view in &self.swapchain_image_views {
+                device.destroy_image_view(*image_view, None);
+            }
             self.swapchain_ext.as_ref().unwrap().destroy_swapchain(self.swapchain, None);
             self.surface_ext.destroy_surface(self.surface, None);
-            self.device.as_ref().unwrap().destroy_device(None);
+            device.destroy_device(None);
             self.debug_utils_ext.destroy_debug_utils_messenger(self.debug_utils_messenger, None);
             self.instance.destroy_instance(None);
         }
@@ -304,6 +331,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.select_physical_device()?;
     app.create_device()?;
     app.create_swapchain(&window)?;
+    app.create_image_views()?;
     app.create_queues()?;
 
     let mut app = Some(app);
