@@ -295,13 +295,14 @@ impl VulkanExperiment {
                 .image(*image)
                 .view_type(vk::ImageViewType::TYPE_2D)
                 .format(surface_format.format)
-                .components(*vk::ComponentMapping::builder().r(vk::ComponentSwizzle::IDENTITY).g(vk::ComponentSwizzle::IDENTITY).b(vk::ComponentSwizzle::IDENTITY).a(vk::ComponentSwizzle::IDENTITY))
-                .subresource_range(*vk::ImageSubresourceRange::builder()
+                .components(vk::ComponentMapping::builder().r(vk::ComponentSwizzle::IDENTITY).g(vk::ComponentSwizzle::IDENTITY).b(vk::ComponentSwizzle::IDENTITY).a(vk::ComponentSwizzle::IDENTITY).build())
+                .subresource_range(vk::ImageSubresourceRange::builder()
                     .aspect_mask(vk::ImageAspectFlags::COLOR)
                     .base_mip_level(0)
                     .level_count(1)
                     .base_array_layer(0)
                     .layer_count(1)
+                    .build()
                 );
             unsafe { self.device.as_ref().unwrap().create_image_view(&create_info, None) }
         }).collect::<Result<Vec<vk::ImageView>, ash::vk::Result>>()?;
@@ -355,7 +356,7 @@ impl VulkanExperiment {
             .build()
         ];
         let scissors = [vk::Rect2D::builder()
-            .offset(*vk::Offset2D::builder().x(0).y(0))
+            .offset(vk::Offset2D::builder().x(0).y(0).build())
             .extent(extent)
             .build()
         ];
