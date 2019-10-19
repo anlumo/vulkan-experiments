@@ -18,13 +18,13 @@ pub struct QueueFamilyIndices {
 }
 
 impl QueueFamilyIndices {
-    pub fn find(instance: &ash::Instance, device: vk::PhysicalDevice, surface_ext: &Surface, surface: &vk::SurfaceKHR) -> Self {
+    pub fn find(instance: &ash::Instance, device: vk::PhysicalDevice, surface_ext: &Surface, surface: vk::SurfaceKHR) -> Self {
         let mut result = Self::default();
 
         for (idx, properties) in unsafe { instance.get_physical_device_queue_family_properties(device) }.into_iter().enumerate() {
             if properties.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
                 result.graphics = Some(idx as u32);
-                if unsafe { surface_ext.get_physical_device_surface_support(device, idx as u32, *surface) } {
+                if unsafe { surface_ext.get_physical_device_surface_support(device, idx as u32, surface) } {
                     result.present = Some(idx as u32);
                 }
             } else if properties.queue_flags.contains(vk::QueueFlags::COMPUTE) {

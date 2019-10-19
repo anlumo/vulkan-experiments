@@ -35,10 +35,10 @@ impl std::fmt::Display for NonDisplayDevice {
     }
 }
 
-pub fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevice, surface_ext: &Surface, surface: &vk::SurfaceKHR) -> Result<(u32, String, SwapChainSupportDetails), Box<dyn std::error::Error>> {
+pub fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevice, surface_ext: &Surface, surface: vk::SurfaceKHR) -> Result<(u32, String, SwapChainSupportDetails), Box<dyn std::error::Error>> {
     let properties = unsafe { instance.get_physical_device_properties(device) };
     let ext_props = unsafe { instance.enumerate_device_extension_properties(device) }?;
-    let extensions = ext_props.into_iter().map(|props| unsafe { CStr::from_ptr(props.extension_name.as_ptr()) }.to_owned().clone()).collect();
+    let extensions = ext_props.into_iter().map(|props| unsafe { CStr::from_ptr(props.extension_name.as_ptr()) }.to_owned()).collect();
     // let features = unsafe { instance.get_physical_device_features(device) };
 
     if DEVICE_EXTENSIONS.is_subset(&extensions) {
@@ -51,7 +51,7 @@ pub fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevice, 
                 vk::PhysicalDeviceType::INTEGRATED_GPU => 500,
                 vk::PhysicalDeviceType::VIRTUAL_GPU => 250,
                 _ => 0,
-            }, unsafe { CStr::from_ptr(&properties.device_name as *const i8) }.to_string_lossy().to_string().clone(), swap_chain_support_details))
+            }, unsafe { CStr::from_ptr(&properties.device_name as *const i8) }.to_string_lossy().to_string(), swap_chain_support_details))
         }
     } else {
         Err(Box::new(NonDisplayDevice()))

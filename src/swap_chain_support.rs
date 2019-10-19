@@ -14,11 +14,11 @@ pub struct SwapChainSupportDetails {
 }
 
 impl SwapChainSupportDetails {
-    pub fn query(device: vk::PhysicalDevice, surface_ext: &Surface, surface: &vk::SurfaceKHR) -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn query(device: vk::PhysicalDevice, surface_ext: &Surface, surface: vk::SurfaceKHR) -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self {
-            capabilities: unsafe { surface_ext.get_physical_device_surface_capabilities(device, *surface) }?,
-            formats: unsafe { surface_ext.get_physical_device_surface_formats(device, *surface) }?,
-            present_modes: unsafe { surface_ext.get_physical_device_surface_present_modes(device, *surface) }?,
+            capabilities: unsafe { surface_ext.get_physical_device_surface_capabilities(device, surface) }?,
+            formats: unsafe { surface_ext.get_physical_device_surface_formats(device, surface) }?,
+            present_modes: unsafe { surface_ext.get_physical_device_surface_present_modes(device, surface) }?,
         })
     }
 

@@ -164,9 +164,7 @@ impl VulkanExperiment {
             DebugUtils::name().as_ptr(),
         ];
         let extension_names_raw: Vec<*const i8> = extension_names
-            .iter()
-            .map(|raw_name| *raw_name)
-            .collect();
+            .iter().copied().collect();
         let mut debug_messenger_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
             .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::all())
             .message_type(vk::DebugUtilsMessageTypeFlagsEXT::all())
@@ -203,10 +201,10 @@ impl VulkanExperiment {
         trace!("select_physical_device");
         let physical_devices = unsafe { self.instance.enumerate_physical_devices() }?;
         let physical_device = physical_devices.into_iter().filter_map(|device| {
-            match is_device_suitable(&self.instance, device, &self.surface_ext, &self.surface) {
+            match is_device_suitable(&self.instance, device, &self.surface_ext, self.surface) {
                 Ok((suitability, name, swap_chain_support_details)) => {
                     if suitability > 0 {
-                        let indices = QueueFamilyIndices::find(&self.instance, device, &self.surface_ext, &self.surface);
+                        let indices = QueueFamilyIndices::find(&self.instance, device, &self.surface_ext, self.surface);
                         if indices.is_device_suitable() {
                             return Some(SelectedDevice { suitability, device, name, indices, swap_chain_support_details });
                         }
@@ -239,7 +237,7 @@ impl VulkanExperiment {
         let queue_families: HashSet<u32> = [
             self.physical_device.indices.graphics.unwrap(),
             self.physical_device.indices.present.unwrap(),
-        ].into_iter().cloned().collect();
+        ].iter().cloned().collect();
         let queue_create_infos: Vec<vk::DeviceQueueCreateInfo> = queue_families.into_iter().map(|queue_family| {
             vk::DeviceQueueCreateInfo::builder()
                 .queue_family_index(queue_family)
