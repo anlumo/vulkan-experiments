@@ -83,11 +83,17 @@ struct VulkanExperiment {
     physical_device: SelectedDevice,
     device: Option<ash::Device>,
     swapchain: vk::SwapchainKHR,
+    swapchain_extent: vk::Extent2D,
     swapchain_images: Vec<vk::Image>,
     swapchain_image_views: Vec<vk::ImageView>,
     pipeline_layout: vk::PipelineLayout,
     render_pass: vk::RenderPass,
     graphics_pipeline: vk::Pipeline,
+    swapchain_framebuffers: Vec<vk::Framebuffer>,
+    command_pool: vk::CommandPool,
+    command_buffers: Vec<vk::CommandBuffer>,
+    image_available_semaphore: vk::Semaphore,
+    render_finished_semaphore: vk::Semaphore,
 
     graphics_queue: vk::Queue,
     present_queue: vk::Queue,
@@ -113,11 +119,17 @@ impl VulkanExperiment {
             physical_device: Default::default(),
             device: Default::default(),
             swapchain: Default::default(),
+            swapchain_extent: Default::default(),
             swapchain_images: Default::default(),
             swapchain_image_views: Default::default(),
             pipeline_layout: Default::default(),
             render_pass: Default::default(),
             graphics_pipeline: Default::default(),
+            swapchain_framebuffers: Default::default(),
+            command_pool: Default::default(),
+            command_buffers: Default::default(),
+            image_available_semaphore: Default::default(),
+            render_finished_semaphore: Default::default(),
 
             graphics_queue: Default::default(),
             present_queue: Default::default(),
@@ -251,7 +263,7 @@ impl VulkanExperiment {
         trace!("create_swapchain");
         let surface_format = self.physical_device.swap_chain_support_details.choose_format();
         let present_mode = self.physical_device.swap_chain_support_details.choose_present_mode();
-        let extent = self.physical_device.swap_chain_support_details.choose_swap_extent(window.inner_size().width as u32, window.inner_size().height as u32);
+        self.swapchain_extent = self.physical_device.swap_chain_support_details.choose_swap_extent(window.inner_size().width as u32, window.inner_size().height as u32);
         let image_count = {
             if self.physical_device.swap_chain_support_details.capabilities.max_image_count > 0 &&
                     self.physical_device.swap_chain_support_details.capabilities.min_image_count + 1 > self.physical_device.swap_chain_support_details.capabilities.max_image_count {
@@ -265,7 +277,7 @@ impl VulkanExperiment {
             .min_image_count(image_count)
             .image_format(surface_format.format)
             .image_color_space(surface_format.color_space)
-            .image_extent(extent)
+            .image_extent(self.swapchain_extent)
             .image_array_layers(1)
             .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT);
         
@@ -319,9 +331,8 @@ impl VulkanExperiment {
         Ok(unsafe { self.device.as_ref().unwrap().create_shader_module(&create_info, None) }?)
     }
 
-    pub fn create_graphics_pipeline(&mut self, window: &winit::window::Window) -> VulkanResult<()> {
+    pub fn create_graphics_pipeline(&mut self) -> VulkanResult<()> {
         trace!("create_graphics_pipeline");
-        let extent = self.physical_device.swap_chain_support_details.choose_swap_extent(window.inner_size().width as u32, window.inner_size().height as u32);
         let vertex_shader   = self.create_shader_module(include_str!("shaders/triangle.vs"), "triangle.vs", shaderc::ShaderKind::Vertex)?;
         let fragment_shader = self.create_shader_module(include_str!("shaders/triangle.fs"), "triangle.fs", shaderc::ShaderKind::Fragment)?;
 
@@ -349,15 +360,15 @@ impl VulkanExperiment {
         let viewports = [vk::Viewport::builder()
             .x(0.0)
             .y(0.0)
-            .width(extent.width as f32)
-            .height(extent.height as f32)
+            .width(self.swapchain_extent.width as f32)
+            .height(self.swapchain_extent.height as f32)
             .min_depth(0.0)
             .max_depth(1.0)
             .build()
         ];
         let scissors = [vk::Rect2D::builder()
             .offset(vk::Offset2D::builder().x(0).y(0).build())
-            .extent(extent)
+            .extent(self.swapchain_extent)
             .build()
         ];
         
@@ -463,13 +474,95 @@ impl VulkanExperiment {
             .color_attachments(&color_attachment_refs)
             .build()
         ];
+
+        let dependencies = [vk::SubpassDependency::builder()
+            .src_subpass(vk::SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(vk::AccessFlags::empty())
+            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_READ | vk::AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .build()
+        ];
         
         let render_pass_info = vk::RenderPassCreateInfo::builder()
             .attachments(&color_attachments)
-            .subpasses(&subpasses);
+            .subpasses(&subpasses)
+            .dependencies(&dependencies);
         
         self.render_pass = unsafe { self.device.as_ref().unwrap().create_render_pass(&render_pass_info, None) }?;
 
+        Ok(())
+    }
+
+    pub fn create_framebuffers(&mut self) -> VulkanResult<()> {
+        trace!("create_framebuffers");
+        self.swapchain_framebuffers = self.swapchain_image_views.iter().map(|image_views| {
+            let attachments = [*image_views];
+
+            let framebuffer_info = vk::FramebufferCreateInfo::builder()
+                .render_pass(self.render_pass)
+                .attachments(&attachments)
+                .width(self.swapchain_extent.width)
+                .height(self.swapchain_extent.height)
+                .layers(1);
+            unsafe { self.device.as_ref().unwrap().create_framebuffer(&framebuffer_info, None) }
+        }).collect::<Result<Vec<_>,_>>()?;
+
+        Ok(())
+    }
+
+    pub fn create_command_pool(&mut self) -> VulkanResult<()> {
+        trace!("create_command_pool");
+        let pool_info = vk::CommandPoolCreateInfo::builder()
+            .queue_family_index(self.physical_device.indices.graphics.unwrap());
+        
+        self.command_pool = unsafe { self.device.as_ref().unwrap().create_command_pool(&pool_info, None) }?;
+
+        Ok(())
+    }
+
+    pub fn create_command_buffers(&mut self) -> VulkanResult<()> {
+        trace!("create_command_buffers");
+        let alloc_info = vk::CommandBufferAllocateInfo::builder()
+            .command_pool(self.command_pool)
+            .level(vk::CommandBufferLevel::PRIMARY)
+            .command_buffer_count(self.swapchain_framebuffers.len() as u32);
+        
+        let device = self.device.as_ref().unwrap();
+        self.command_buffers = unsafe { device.allocate_command_buffers(&alloc_info) }?;
+
+        for (command_buffer, framebuffer) in self.command_buffers.iter().zip(self.swapchain_framebuffers.iter()) {
+            let begin_info = vk::CommandBufferBeginInfo::builder();
+            unsafe { device.begin_command_buffer(*command_buffer, &begin_info) }?;
+
+            let clear_color_values = [vk::ClearValue {
+                color: vk::ClearColorValue::default(),
+            }];
+            let render_pass_info = vk::RenderPassBeginInfo::builder()
+                .render_pass(self.render_pass)
+                .framebuffer(*framebuffer)
+                .render_area(vk::Rect2D::builder().offset(vk::Offset2D::builder().x(0).y(0).build()).extent(self.swapchain_extent).build())
+                .clear_values(&clear_color_values);
+
+            unsafe {
+                device.cmd_begin_render_pass(*command_buffer, &render_pass_info, vk::SubpassContents::INLINE);
+                device.cmd_bind_pipeline(*command_buffer, vk::PipelineBindPoint::GRAPHICS, self.graphics_pipeline);
+                device.cmd_draw(*command_buffer, 3, 1, 0, 0);
+                device.cmd_end_render_pass(*command_buffer);
+            }
+            unsafe { device.end_command_buffer(*command_buffer) }?;
+        }
+
+        Ok(())
+    }
+
+    pub fn create_semaphores(&mut self) -> VulkanResult<()> {
+        trace!("create_semaphores");
+        let semaphore_info = vk::SemaphoreCreateInfo::builder();
+        let device = self.device.as_ref().unwrap();
+        self.image_available_semaphore = unsafe { device.create_semaphore(&semaphore_info, None) }?;
+        self.render_finished_semaphore = unsafe { device.create_semaphore(&semaphore_info, None) }?;
         Ok(())
     }
 
@@ -477,6 +570,48 @@ impl VulkanExperiment {
         trace!("create_queues");
         self.graphics_queue = unsafe { self.device.as_ref().unwrap().get_device_queue(self.physical_device.indices.graphics.unwrap(), 0) };
         self.present_queue = unsafe { self.device.as_ref().unwrap().get_device_queue(self.physical_device.indices.present.unwrap(), 0) };
+        Ok(())
+    }
+
+    pub fn draw_frame(&mut self) -> VulkanResult<()> {
+        trace!("draw_frame");
+        let (image_index, _) = unsafe { self.swapchain_ext.as_ref().unwrap().acquire_next_image(self.swapchain, std::u64::MAX, self.image_available_semaphore, vk::Fence::null()) }?;
+        let image_indices = [
+            image_index,
+        ];
+
+        let wait_semaphores = [
+            self.image_available_semaphore,
+        ];
+        let wait_stages = [
+            vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT,
+        ];
+        let signal_semaphores = [
+            self.render_finished_semaphore,
+        ];
+        let submit_info = [vk::SubmitInfo::builder()
+            .wait_semaphores(&wait_semaphores)
+            .wait_dst_stage_mask(&wait_stages)
+            .command_buffers(&self.command_buffers[image_index as usize..])
+            .signal_semaphores(&signal_semaphores).build()
+        ];
+        
+        unsafe { self.device.as_ref().unwrap().queue_submit(self.graphics_queue, &submit_info, vk::Fence::null()) }?;
+
+        let swapchains = [
+            self.swapchain,
+        ];
+
+        let present_info = vk::PresentInfoKHR::builder()
+            .wait_semaphores(&signal_semaphores)
+            .swapchains(&swapchains)
+            .image_indices(&image_indices);
+
+        if let Err(err) = unsafe { self.swapchain_ext.as_ref().unwrap().queue_present(self.present_queue, &present_info) } {
+            error!("vkQueuePresentKHR: {}", err);
+        }
+
+        unsafe { self.device.as_ref().unwrap().device_wait_idle().unwrap() };
         Ok(())
     }
 }
@@ -487,6 +622,13 @@ impl Drop for VulkanExperiment {
             let device = self.device.as_ref().unwrap();
             device.device_wait_idle().unwrap();
 
+            device.destroy_semaphore(self.render_finished_semaphore, None);
+            device.destroy_semaphore(self.image_available_semaphore, None);
+
+            device.destroy_command_pool(self.command_pool, None);
+            for framebuffer in &self.swapchain_framebuffers {
+                device.destroy_framebuffer(*framebuffer, None);
+            }
             device.destroy_pipeline(self.graphics_pipeline, None);
             device.destroy_pipeline_layout(self.pipeline_layout, None);
             device.destroy_render_pass(self.render_pass, None);
@@ -523,7 +665,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     app.create_image_views()?;
     app.create_queues()?;
     app.create_render_pass()?;
-    app.create_graphics_pipeline(&window)?;
+    app.create_graphics_pipeline()?;
+    app.create_framebuffers()?;
+    app.create_command_pool()?;
+    app.create_command_buffers()?;
+    app.create_semaphores()?;
 
     let mut app = Some(app);
 
@@ -540,7 +686,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 window_id,
             } if window_id == window.id() => {
                 trace!("redraw");
-                // redraw here
+                if let Some(mut inner_app) = app.take() {
+                    inner_app.draw_frame().expect("Draw error");
+                    app.replace(inner_app);
+                }
             }
             Event::WindowEvent {
                 event: WindowEvent::HiDpiFactorChanged(_dpi),

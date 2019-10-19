@@ -2,6 +2,6 @@ appenders:
   stdout:
     kind: console
 root:
-  level: trace
+  level: debug
   appenders:
     - stdout
