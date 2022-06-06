@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 log = "0.4"
 log4rs = "0.8"
-ash = "0.29"
+ash = "0.33"
 winit = "0.20.0-alpha3"
 lazy_static = "1.4"
 shaderc = "0.6"
